@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reverse Phone Search</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <div class="container">
+    <h1>🔍 Reverse Phone Search</h1>
+    <p class="subtitle">Look up people by phone number</p>
+
+    <form id="search-form" autocomplete="off">
+      <div class="input-group">
+        <input
+          type="tel"
+          id="phone-input"
+          name="phone"
+          placeholder="Enter phone number (e.g. 202-555-0101)"
+          aria-label="Phone number"
+          required
+        />
+        <button type="submit" id="search-btn">Search</button>
+      </div>
+      <p class="hint">US numbers can be entered without a country code. International numbers require <code>+</code> prefix (e.g. <code>+44 20 7946 0958</code>).</p>
+    </form>
+
+    <div id="result-area" role="region" aria-live="polite"></div>
+  </div>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
