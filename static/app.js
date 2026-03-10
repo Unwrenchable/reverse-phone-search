@@ -1,9 +1,9 @@
 (function () {
   "use strict";
 
-  const form = document.getElementById("search-form");
-  const input = document.getElementById("phone-input");
-  const btn = document.getElementById("search-btn");
+  const form       = document.getElementById("search-form");
+  const input      = document.getElementById("phone-input");
+  const btn        = document.getElementById("search-btn");
   const resultArea = document.getElementById("result-area");
 
   form.addEventListener("submit", async function (e) {
@@ -12,17 +12,17 @@
     if (!phone) return;
 
     btn.disabled = true;
-    btn.textContent = "Searching…";
-    resultArea.innerHTML = "";
+    btn.innerHTML = '<span class="btn-icon">⏳</span> Searching…';
+    resultArea.innerHTML = '<div class="loading"><span class="spinner"></span> Looking up number…</div>';
 
     try {
-      const res = await fetch("/search?" + new URLSearchParams({ phone }));
+      const res  = await fetch("/search?" + new URLSearchParams({ phone }));
       const data = await res.json();
 
       if (!res.ok) {
         showError(data.error || "An unexpected error occurred.");
       } else if (data.found) {
-        showResult(data.result);
+        showReport(data.result);
       } else {
         showNotFound(phone);
       }
@@ -30,44 +30,166 @@
       showError("Could not reach the server. Please try again.");
     } finally {
       btn.disabled = false;
-      btn.textContent = "Search";
+      btn.innerHTML = '<span class="btn-icon">🔍</span> Search';
     }
   });
 
-  function showResult(r) {
-    const rows = [
-      ["Name", escHtml(r.name)],
-      ["Phone", escHtml(r.phone)],
-      ["Address", escHtml([r.address, r.city, r.state].filter(Boolean).join(", "))],
-      ["Email", r.email ? `<a href="mailto:${escHtml(r.email)}">${escHtml(r.email)}</a>` : "—"],
-    ];
+  /* ------------------------------------------------------------------ */
+  /* Report card                                                          */
+  /* ------------------------------------------------------------------ */
+  function showReport(r) {
+    const spamScore  = Number(r.spam_score) || 0;
+    const spamClass  = spamScore >= 70 ? "high" : spamScore >= 30 ? "medium" : "low";
+    const spamBadge  = spamScore >= 70
+      ? '<span class="badge badge-spam">⚠ Spam / Scam</span>'
+      : spamScore >= 30
+        ? '<span class="badge badge-warn">⚠ Suspicious</span>'
+        : '<span class="badge badge-safe">✔ Safe</span>';
 
-    const tbody = rows
-      .map(([label, val]) => `<tr><td>${escHtml(label)}</td><td>${val || "—"}</td></tr>`)
-      .join("");
+    const address = [r.address, r.city, r.state, r.zip].filter(Boolean).join(", ");
 
     resultArea.innerHTML = `
-      <div class="result-card success">
-        <h2>✅ Record Found</h2>
-        <table class="result-table"><tbody>${tbody}</tbody></table>
+      <div class="report-card">
+
+        <!-- Header -->
+        <div class="report-header">
+          <div class="avatar">${r.name ? r.name.charAt(0) : "?"}</div>
+          <div class="report-header-info">
+            <h2>${esc(r.name || "Unknown Caller")}</h2>
+            <div class="report-phone">${esc(r.phone)}</div>
+            ${spamBadge}
+          </div>
+        </div>
+
+        <!-- Sections grid -->
+        <div class="report-sections">
+
+          <!-- Caller Info -->
+          <div class="report-section">
+            <h3>📞 Caller Info</h3>
+            ${row("Line Type", r.line_type)}
+            ${row("Carrier",   r.carrier)}
+            ${row("Location",  r.city && r.state ? esc(r.city) + ", " + esc(r.state) : null)}
+          </div>
+
+          <!-- Owner Details -->
+          <div class="report-section">
+            <h3>👤 Owner Details</h3>
+            ${row("Name",    r.name)}
+            ${row("Age",     r.age != null ? r.age + " years old" : null)}
+            ${row("Address", address || null)}
+          </div>
+
+          <!-- Contact Info -->
+          <div class="report-section">
+            <h3>✉ Contact Info</h3>
+            ${row("Email",    r.email)}
+            ${otherNumbersHtml(r.other_numbers)}
+          </div>
+
+          <!-- Employment -->
+          <div class="report-section">
+            <h3>💼 Employment</h3>
+            ${row("Job Title", r.job_title)}
+            ${row("Employer",  r.employer)}
+          </div>
+
+          <!-- Relatives -->
+          <div class="report-section">
+            <h3>👨‍👩‍👧 Possible Relatives</h3>
+            ${tagList(r.relatives)}
+          </div>
+
+          <!-- Social Profiles -->
+          <div class="report-section">
+            <h3>🌐 Social Profiles</h3>
+            ${socialHtml(r.social_facebook, "Facebook")}
+            ${socialHtml(r.social_linkedin, "LinkedIn")}
+            ${!r.social_facebook && !r.social_linkedin
+              ? '<p style="color:var(--gray-400);font-size:.9rem">No profiles found</p>'
+              : ""}
+          </div>
+
+          <!-- Spam Report — spans full width when it's the last odd item -->
+          <div class="report-section" style="grid-column: 1 / -1">
+            <h3>🛡 Spam Report</h3>
+            <div class="spam-meter">
+              <div class="spam-bar-bg">
+                <div class="spam-bar-fill ${spamClass}" style="width:${spamScore}%"></div>
+              </div>
+              <span class="spam-label-text">
+                Score: <strong>${spamScore}/100</strong>
+                ${r.spam_label ? " &mdash; " + esc(r.spam_label) : ""}
+              </span>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Footer row -->
+        <div class="search-count-row">
+          🔎 This number has been searched <strong>${Number(r.search_count).toLocaleString()}</strong> time(s)
+        </div>
       </div>`;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Helpers                                                              */
+  /* ------------------------------------------------------------------ */
+  function row(label, value) {
+    if (!value) return "";
+    return `<div class="info-row">
+              <span class="info-label">${esc(label)}</span>
+              <span class="info-value">${esc(String(value))}</span>
+            </div>`;
+  }
+
+  function tagList(items) {
+    if (!items || !items.length) {
+      return '<p style="color:var(--gray-400);font-size:.9rem">None on record</p>';
+    }
+    const tags = items.map(t => `<span class="tag">${esc(t)}</span>`).join("");
+    return `<div class="tag-list">${tags}</div>`;
+  }
+
+  function otherNumbersHtml(numbers) {
+    if (!numbers || !numbers.length) return "";
+    const tags = numbers.map(n => `<span class="tag">${esc(n)}</span>`).join("");
+    return `<div class="info-row" style="flex-direction:column">
+              <span class="info-label" style="margin-bottom:.3rem">Other Numbers</span>
+              <div class="tag-list">${tags}</div>
+            </div>`;
+  }
+
+  /** Show social profile URL as plain text — no href/mailto link */
+  function socialHtml(url, platform) {
+    if (!url) return "";
+    return `<div class="social-item">
+              <span>${platform === "Facebook" ? "📘" : "💼"}</span>
+              <span>${esc(platform)}: ${esc(url)}</span>
+            </div>`;
   }
 
   function showNotFound(phone) {
     resultArea.innerHTML = `
-      <div class="result-card not-found">
-        <p class="message">No record found for <strong>${escHtml(phone)}</strong>.</p>
+      <div class="status-card">
+        <div class="status-icon">🔎</div>
+        <h2>No Record Found</h2>
+        <p>We couldn't find any information for <strong>${esc(phone)}</strong>.<br>
+           The number may be unlisted or not in our database.</p>
       </div>`;
   }
 
   function showError(msg) {
     resultArea.innerHTML = `
-      <div class="result-card error">
-        <p class="message error">⚠️ ${escHtml(msg)}</p>
+      <div class="status-card">
+        <div class="status-icon">⚠️</div>
+        <h2>Something Went Wrong</h2>
+        <p>${esc(msg)}</p>
       </div>`;
   }
 
-  function escHtml(str) {
+  function esc(str) {
     if (str == null) return "";
     return String(str)
       .replace(/&/g, "&amp;")

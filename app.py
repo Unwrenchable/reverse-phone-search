@@ -16,7 +16,10 @@ def _normalize_phone(raw: str):
     try:
         parsed = phonenumbers.parse(raw, "US")
     except phonenumbers.NumberParseException:
-        raise ValueError("Unable to parse the phone number. Include a country code (e.g. +1) if outside the US.")
+        raise ValueError(
+            "Unable to parse the phone number. "
+            "Include a country code (e.g. +1) if outside the US."
+        )
     if not phonenumbers.is_valid_number(parsed):
         raise ValueError("The phone number entered is not valid.")
     return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
@@ -32,9 +35,9 @@ def search():
     """
     Query parameter: phone
     Returns JSON:
-      - on success: { "found": true, "result": { name, phone, address, city, state, email } }
+      - on success:   { "found": true,  "result": { ... } }
       - on not found: { "found": false }
-      - on error: { "error": "..." }  with HTTP 400
+      - on error:     { "error": "..." }  HTTP 400
     """
     raw = request.args.get("phone", "")
     try:
@@ -44,6 +47,12 @@ def search():
 
     result = lookup_phone(normalized)
     if result:
+        # Split comma-separated list fields into arrays for the frontend
+        for field in ("other_numbers", "relatives"):
+            if result.get(field):
+                result[field] = [v.strip() for v in result[field].split(",")]
+            else:
+                result[field] = []
         return jsonify({"found": True, "result": result})
     return jsonify({"found": False})
 
