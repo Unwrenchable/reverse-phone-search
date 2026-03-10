@@ -70,6 +70,21 @@ class TestDatabase:
         for phone in sample_phones:
             assert lookup_phone(phone, db_path=db_path) is not None, f"Missing: {phone}"
 
+    def test_lookup_expanded_entries(self, db_path):
+        """Verify entries added in the expanded database across multiple area codes."""
+        expanded_phones = [
+            "+17256002554",  # Las Vegas, NV (725)
+            "+17026002101",  # Las Vegas, NV (702)
+            "+12125550201",  # New York, NY
+            "+13125550501",  # Chicago, IL
+            "+14045552201",  # Atlanta, GA
+            "+13055552401",  # Miami, FL
+            "+14155551601",  # San Francisco, CA
+            "+12065551801",  # Seattle, WA
+        ]
+        for phone in expanded_phones:
+            assert lookup_phone(phone, db_path=db_path) is not None, f"Missing: {phone}"
+
 
 # ---------------------------------------------------------------------------
 # Flask route tests
