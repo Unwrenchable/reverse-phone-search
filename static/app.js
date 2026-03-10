@@ -177,7 +177,94 @@
         <h2>No Record Found</h2>
         <p>We couldn't find any information for <strong>${esc(phone)}</strong>.<br>
            The number may be unlisted or not in our database.</p>
+        <button class="contribute-toggle-btn" id="contribute-toggle">
+          ➕ Add This Number to the Database
+        </button>
+        <div class="contribute-form" id="contribute-form" hidden>
+          <p class="contribute-desc">Help expand the database by contributing details for this number.</p>
+          <form id="submit-form" novalidate>
+            <input type="hidden" id="submit-phone" name="phone" value="${esc(phone)}" />
+            <div class="form-row">
+              <label for="submit-name">Name <span class="required">*</span></label>
+              <input type="text" id="submit-name" name="name" placeholder="Full name" required />
+            </div>
+            <div class="form-row">
+              <label for="submit-age">Age</label>
+              <input type="number" id="submit-age" name="age" placeholder="e.g. 30" min="1" max="130" />
+            </div>
+            <div class="form-row">
+              <label for="submit-carrier">Carrier</label>
+              <input type="text" id="submit-carrier" name="carrier" placeholder="e.g. AT&amp;T, Verizon" />
+            </div>
+            <div class="form-row">
+              <label for="submit-city">City</label>
+              <input type="text" id="submit-city" name="city" placeholder="e.g. Chicago" />
+            </div>
+            <div class="form-row">
+              <label for="submit-state">State</label>
+              <input type="text" id="submit-state" name="state" placeholder="e.g. IL" maxlength="2" />
+            </div>
+            <div id="submit-error" class="form-error" hidden></div>
+            <div class="form-actions">
+              <button type="submit" id="submit-btn">Submit</button>
+            </div>
+          </form>
+        </div>
       </div>`;
+
+    document.getElementById("contribute-toggle").addEventListener("click", function () {
+      const form = document.getElementById("contribute-form");
+      const hidden = form.hidden;
+      form.hidden = !hidden;
+      this.textContent = hidden ? "✖ Cancel" : "➕ Add This Number to the Database";
+    });
+
+    document.getElementById("submit-form").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      const errEl = document.getElementById("submit-error");
+      errEl.hidden = true;
+
+      const submitBtn = document.getElementById("submit-btn");
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Submitting…";
+
+      const payload = {
+        phone:   document.getElementById("submit-phone").value,
+        name:    document.getElementById("submit-name").value.trim(),
+        age:     document.getElementById("submit-age").value   || undefined,
+        carrier: document.getElementById("submit-carrier").value.trim() || undefined,
+        city:    document.getElementById("submit-city").value.trim()    || undefined,
+        state:   document.getElementById("submit-state").value.trim()   || undefined,
+      };
+
+      try {
+        const res  = await fetch("/submit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+
+        if (res.ok && data.added) {
+          resultArea.innerHTML = `
+            <div class="status-card">
+              <div class="status-icon">✅</div>
+              <h2>Number Added!</h2>
+              <p>Thank you! <strong>${esc(payload.phone)}</strong> has been added to the database.</p>
+            </div>`;
+        } else {
+          errEl.textContent = data.error || "Submission failed. Please try again.";
+          errEl.hidden = false;
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Submit";
+        }
+      } catch {
+        errEl.textContent = "Could not reach the server. Please try again.";
+        errEl.hidden = false;
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Submit";
+      }
+    });
   }
 
   function showError(msg) {

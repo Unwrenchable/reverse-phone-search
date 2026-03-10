@@ -205,3 +205,33 @@ def lookup_phone(phone: str, db_path=None):
     finally:
         conn.close()
 
+
+_OPTIONAL_FIELDS = frozenset({
+    "age", "line_type", "carrier", "address", "city", "state", "zip",
+    "email", "job_title", "employer",
+})
+
+
+def add_contact(phone: str, name: str, db_path=None, **kwargs):
+    """
+    Insert a new contact into the database.
+    Only fields listed in _OPTIONAL_FIELDS are accepted via kwargs.
+    Returns True if the row was inserted, False if the phone already exists.
+    """
+    extra = {k: v for k, v in kwargs.items() if k in _OPTIONAL_FIELDS}
+    columns = ["phone", "name"] + list(extra.keys())
+    placeholders = ["?"] * len(columns)
+    values = [phone, name] + list(extra.values())
+
+    sql = (
+        f"INSERT OR IGNORE INTO contacts ({', '.join(columns)}) "
+        f"VALUES ({', '.join(placeholders)})"
+    )
+    conn = get_connection(db_path)
+    try:
+        with conn:
+            cursor = conn.execute(sql, values)
+            return cursor.rowcount > 0
+    finally:
+        conn.close()
+
