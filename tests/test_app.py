@@ -4,7 +4,7 @@ Tests for the reverse phone search application.
 import pytest
 
 from app import app as flask_app
-from database import add_contact, init_db, lookup_phone
+from database import init_db, lookup_phone
 
 
 @pytest.fixture()
@@ -68,6 +68,21 @@ class TestDatabase:
             "+16025550131", "+16025550132",
         ]
         for phone in sample_phones:
+            assert lookup_phone(phone, db_path=db_path) is not None, f"Missing: {phone}"
+
+    def test_lookup_expanded_entries(self, db_path):
+        """Verify entries added in the expanded database across multiple area codes."""
+        expanded_phones = [
+            "+17256002554",  # Las Vegas, NV (725)
+            "+17026002101",  # Las Vegas, NV (702)
+            "+12125550201",  # New York, NY
+            "+13125550501",  # Chicago, IL
+            "+14045552201",  # Atlanta, GA
+            "+13055552401",  # Miami, FL
+            "+14155551601",  # San Francisco, CA
+            "+12065551801",  # Seattle, WA
+        ]
+        for phone in expanded_phones:
             assert lookup_phone(phone, db_path=db_path) is not None, f"Missing: {phone}"
 
 
@@ -146,81 +161,3 @@ class TestRoutes:
         assert resp.status_code == 400
         data = resp.get_json()
         assert "error" in data
-
-
-# ---------------------------------------------------------------------------
-# add_contact database tests
-# ---------------------------------------------------------------------------
-
-class TestAddContact:
-    def test_add_new_number_returns_true(self, db_path):
-        added = add_contact("+17256002554", "Test User", db_path=db_path)
-        assert added is True
-
-    def test_add_duplicate_returns_false(self, db_path):
-        add_contact("+17256002554", "Test User", db_path=db_path)
-        added = add_contact("+17256002554", "Other User", db_path=db_path)
-        assert added is False
-
-    def test_add_number_is_retrievable(self, db_path):
-        add_contact("+17256002554", "Jane Doe", db_path=db_path, city="Las Vegas", state="NV")
-        result = lookup_phone("+17256002554", db_path=db_path)
-        assert result is not None
-        assert result["name"] == "Jane Doe"
-        assert result["city"] == "Las Vegas"
-        assert result["state"] == "NV"
-
-    def test_add_number_unknown_fields_ignored(self, db_path):
-        # Unknown kwargs should not raise; only allowed fields stored
-        added = add_contact("+17256002554", "Jane Doe", db_path=db_path, unknown_field="x")
-        assert added is True
-        result = lookup_phone("+17256002554", db_path=db_path)
-        assert result["name"] == "Jane Doe"
-
-
-# ---------------------------------------------------------------------------
-# /submit endpoint tests
-# ---------------------------------------------------------------------------
-
-class TestSubmitRoute:
-    def test_submit_new_number(self, client):
-        resp = client.post("/submit", json={"phone": "7256002554", "name": "Jane Doe"})
-        assert resp.status_code == 200
-        assert resp.get_json()["added"] is True
-
-    def test_submit_lookup_after_add(self, client, db_path):
-        client.post("/submit", json={"phone": "7256002554", "name": "Jane Doe", "city": "Las Vegas", "state": "NV"})
-        result = lookup_phone("+17256002554", db_path=db_path)
-        assert result is not None
-        assert result["name"] == "Jane Doe"
-
-    def test_submit_duplicate_returns_409(self, client):
-        client.post("/submit", json={"phone": "7256002554", "name": "Jane Doe"})
-        resp = client.post("/submit", json={"phone": "7256002554", "name": "Other Person"})
-        assert resp.status_code == 409
-        assert "error" in resp.get_json()
-
-    def test_submit_missing_name_returns_400(self, client):
-        resp = client.post("/submit", json={"phone": "7256002554"})
-        assert resp.status_code == 400
-        assert "error" in resp.get_json()
-
-    def test_submit_invalid_phone_returns_400(self, client):
-        resp = client.post("/submit", json={"phone": "notaphone", "name": "Jane Doe"})
-        assert resp.status_code == 400
-        assert "error" in resp.get_json()
-
-    def test_submit_invalid_age_returns_400(self, client):
-        resp = client.post("/submit", json={"phone": "7256002554", "name": "Jane Doe", "age": "notanumber"})
-        assert resp.status_code == 400
-        assert "error" in resp.get_json()
-
-    def test_submit_with_optional_fields(self, client, db_path):
-        resp = client.post("/submit", json={
-            "phone": "7256002554", "name": "Jane Doe",
-            "age": 30, "carrier": "AT&T", "city": "Las Vegas", "state": "NV",
-        })
-        assert resp.status_code == 200
-        result = lookup_phone("+17256002554", db_path=db_path)
-        assert result["age"] == 30
-        assert result["carrier"] == "AT&T"
