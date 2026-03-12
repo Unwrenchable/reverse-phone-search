@@ -161,3 +161,72 @@ class TestRoutes:
         assert resp.status_code == 400
         data = resp.get_json()
         assert "error" in data
+
+
+# ---------------------------------------------------------------------------
+# search_count increment tests
+# ---------------------------------------------------------------------------
+
+class TestSearchCount:
+    def test_search_count_increments_on_lookup(self, db_path):
+        """lookup_phone must increment search_count each time it is called."""
+        from database import lookup_phone
+        r1 = lookup_phone("+12025550101", db_path=db_path)
+        count_before = r1["search_count"]
+        r2 = lookup_phone("+12025550101", db_path=db_path)
+        assert r2["search_count"] == count_before + 1
+
+    def test_search_count_increments_via_route(self, client, db_path):
+        """The /search route must cause search_count to grow."""
+        from database import lookup_phone
+        before = lookup_phone("+12025550101", db_path=db_path)["search_count"]
+        client.get("/search?phone=%2B12025550101")
+        after = lookup_phone("+12025550101", db_path=db_path)["search_count"]
+        assert after > before
+
+    def test_search_count_not_incremented_for_unknown(self, db_path):
+        """lookup_phone must not error and must return None for unknown numbers."""
+        from database import lookup_phone
+        result = lookup_phone("+12125550199", db_path=db_path)
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Rate limiting tests
+# ---------------------------------------------------------------------------
+
+class TestRateLimiting:
+    def test_rate_limit_returns_429_after_max_requests(self, app, monkeypatch):
+        """Exceed RATE_LIMIT_MAX_CALLS within the window → 429."""
+        import app as app_module
+        # Patch limits so we can trigger them quickly
+        monkeypatch.setattr(app_module, "_RATE_LIMIT_MAX_CALLS", 3)
+        # Clear any existing rate data
+        monkeypatch.setattr(app_module, "_rate_data", {})
+        client = app.test_client()
+        for _ in range(3):
+            resp = client.get("/search?phone=2025550101")
+            assert resp.status_code != 429
+        # 4th request should be rate-limited
+        resp = client.get("/search?phone=2025550101")
+        assert resp.status_code == 429
+        data = resp.get_json()
+        assert "error" in data
+
+    def test_rate_limit_resets_after_window(self, app, monkeypatch):
+        """After the window expires, requests are allowed again."""
+        import app as app_module
+        import time
+        monkeypatch.setattr(app_module, "_RATE_LIMIT_MAX_CALLS", 2)
+        monkeypatch.setattr(app_module, "_RATE_LIMIT_WINDOW", 1)
+        monkeypatch.setattr(app_module, "_rate_data", {})
+        client = app.test_client()
+        for _ in range(2):
+            client.get("/search?phone=2025550101")
+        # Exhaust limit
+        resp = client.get("/search?phone=2025550101")
+        assert resp.status_code == 429
+        # Wait for window to expire
+        time.sleep(1.1)
+        resp = client.get("/search?phone=2025550101")
+        assert resp.status_code != 429

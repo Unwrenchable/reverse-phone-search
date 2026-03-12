@@ -33,11 +33,17 @@
             <span class="btn-icon">🔍</span> Search
           </button>
         </div>
+        <p id="input-error" class="input-error" role="alert" aria-live="polite"></p>
         <p class="search-hint">
           US numbers can be entered without a country code.
           International numbers require a <code>+</code> prefix.
         </p>
       </form>
+
+      <div id="recent-searches" class="recent-searches" hidden>
+        <p class="recent-label">Recent searches:</p>
+        <div id="recent-list" class="recent-list"></div>
+      </div>
     </section>
 
     <div id="result-area" role="region" aria-live="polite"></div>

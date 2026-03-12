@@ -1,15 +1,110 @@
 (function () {
   "use strict";
 
-  const form       = document.getElementById("search-form");
-  const input      = document.getElementById("phone-input");
-  const btn        = document.getElementById("search-btn");
-  const resultArea = document.getElementById("result-area");
+  /* ------------------------------------------------------------------ */
+  /* Utility                                                              */
+  /* ------------------------------------------------------------------ */
+  function esc(str) {
+    if (str == null) return "";
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
 
+  const form        = document.getElementById("search-form");
+  const input       = document.getElementById("phone-input");
+  const btn         = document.getElementById("search-btn");
+  const resultArea  = document.getElementById("result-area");
+  const inputError  = document.getElementById("input-error");
+
+  /* ------------------------------------------------------------------ */
+  /* Recent searches (localStorage, last 5)                              */
+  /* ------------------------------------------------------------------ */
+  const RECENT_KEY  = "rps_recent_searches";
+  const RECENT_MAX  = 5;
+
+  function loadRecent() {
+    try { return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]"); }
+    catch { return []; }
+  }
+
+  function saveRecent(phone) {
+    let list = loadRecent().filter(p => p !== phone);
+    list.unshift(phone);
+    if (list.length > RECENT_MAX) list = list.slice(0, RECENT_MAX);
+    try { localStorage.setItem(RECENT_KEY, JSON.stringify(list)); } catch { /* quota */ }
+    renderRecent(list);
+  }
+
+  function renderRecent(list) {
+    const container = document.getElementById("recent-searches");
+    const ul        = document.getElementById("recent-list");
+    if (!list.length) { container.hidden = true; return; }
+    ul.innerHTML = list.map(p =>
+      `<button type="button" class="recent-chip" data-phone="${esc(p)}">${esc(p)}</button>`
+    ).join("");
+    container.hidden = false;
+  }
+
+  // Clicking a recent chip fills the input and submits
+  document.getElementById("recent-list").addEventListener("click", function (e) {
+    const chip = e.target.closest(".recent-chip");
+    if (!chip) return;
+    input.value = chip.dataset.phone;
+    form.requestSubmit();
+  });
+
+  // Render saved searches on page load
+  renderRecent(loadRecent());
+
+  /* ------------------------------------------------------------------ */
+  /* Client-side input validation                                        */
+  /* ------------------------------------------------------------------ */
+  // Allowed characters: digits, spaces, dashes, dots, parens, leading plus
+  const PHONE_CHARS_RE = /^[+\d][\d\s\-().]*$/;
+
+  function validateInput(value) {
+    if (!value) return "Please enter a phone number.";
+    const digitCount = (value.match(/\d/g) || []).length;
+    if (!PHONE_CHARS_RE.test(value) || digitCount < 7) {
+      return "Please enter a valid phone number (at least 7 digits; spaces, dashes, and parentheses are allowed).";
+    }
+    return "";
+  }
+
+  function setInputError(msg) {
+    inputError.textContent = msg;
+    input.setAttribute("aria-invalid", msg ? "true" : "false");
+  }
+
+  // Real-time validation on blur / while editing after first error
+  let blurredOnce = false;
+  input.addEventListener("blur", function () {
+    blurredOnce = true;
+    setInputError(validateInput(input.value.trim()));
+  });
+  input.addEventListener("input", function () {
+    if (blurredOnce) setInputError(validateInput(input.value.trim()));
+  });
+
+  /* ------------------------------------------------------------------ */
+  /* Form submit                                                          */
+  /* ------------------------------------------------------------------ */
   form.addEventListener("submit", async function (e) {
     e.preventDefault();
     const phone = input.value.trim();
-    if (!phone) return;
+
+    const validationError = validateInput(phone);
+    if (validationError) {
+      blurredOnce = true;
+      setInputError(validationError);
+      input.focus();
+      return;
+    }
+    setInputError("");
 
     btn.disabled = true;
     btn.innerHTML = '<span class="btn-icon">⏳</span> Searching…';
@@ -19,11 +114,15 @@
       const res  = await fetch("/search?" + new URLSearchParams({ phone }));
       const data = await res.json();
 
-      if (!res.ok) {
+      if (res.status === 429) {
+        showError(data.error || "Too many requests. Please wait a moment and try again.");
+      } else if (!res.ok) {
         showError(data.error || "An unexpected error occurred.");
       } else if (data.found) {
+        saveRecent(phone);
         showReport(data.result);
       } else {
+        saveRecent(phone);
         showNotFound(phone);
       }
     } catch {
@@ -189,13 +288,4 @@
       </div>`;
   }
 
-  function esc(str) {
-    if (str == null) return "";
-    return String(str)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  }
 })();
