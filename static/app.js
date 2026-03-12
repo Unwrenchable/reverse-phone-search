@@ -61,17 +61,56 @@
   renderRecent(loadRecent());
 
   /* ------------------------------------------------------------------ */
+  /* Phone auto-formatter                                                */
+  /* ------------------------------------------------------------------ */
+  /**
+   * Format a partial or complete NANP number as (NXX) NXX-XXXX.
+   * Values that start with '+' (international) are returned unchanged.
+   */
+  function formatPhoneValue(value) {
+    if (value.startsWith("+")) return value;
+    const d = value.replace(/\D/g, "").slice(0, 10);
+    if (d.length === 0) return "";
+    if (d.length <= 3) return "(" + d;
+    if (d.length <= 6) return "(" + d.slice(0, 3) + ") " + d.slice(3);
+    return "(" + d.slice(0, 3) + ") " + d.slice(3, 6) + "-" + d.slice(6, 10);
+  }
+
+  /**
+   * Reformat the input element's value in-place, preserving the cursor by
+   * counting how many digits appeared before the original cursor position.
+   */
+  function applyPhoneFormat(inputEl) {
+    const raw = inputEl.value;
+    if (raw.startsWith("+")) return;             // leave international alone
+    const sel = inputEl.selectionStart || 0;
+    const digitsBeforeCursor = (raw.slice(0, sel).match(/\d/g) || []).length;
+
+    const formatted = formatPhoneValue(raw);
+    if (formatted === raw) return;               // nothing changed
+
+    inputEl.value = formatted;
+
+    // Find new cursor position: advance past the same count of digits
+    let seen = 0;
+    let newPos = formatted.length;
+    for (let i = 0; i < formatted.length; i++) {
+      if (/\d/.test(formatted[i])) {
+        seen++;
+        if (seen === digitsBeforeCursor) { newPos = i + 1; break; }
+      }
+    }
+    if (digitsBeforeCursor === 0) newPos = 0;
+    inputEl.setSelectionRange(newPos, newPos);
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Client-side input validation                                        */
   /* ------------------------------------------------------------------ */
-  // Allowed characters: digits, spaces, dashes, dots, parens, leading plus
-  const PHONE_CHARS_RE = /^[+\d][\d\s\-().]*$/;
-
   function validateInput(value) {
     if (!value) return "Please enter a phone number.";
-    const digitCount = (value.match(/\d/g) || []).length;
-    if (!PHONE_CHARS_RE.test(value) || digitCount < 7) {
-      return "Please enter a valid phone number (at least 7 digits; spaces, dashes, and parentheses are allowed).";
-    }
+    const digits = value.replace(/\D/g, "");
+    if (digits.length < 7) return "Please enter at least 7 digits.";
     return "";
   }
 
@@ -80,13 +119,14 @@
     input.setAttribute("aria-invalid", msg ? "true" : "false");
   }
 
-  // Real-time validation on blur / while editing after first error
+  // Format while typing; validate after first blur
   let blurredOnce = false;
   input.addEventListener("blur", function () {
     blurredOnce = true;
     setInputError(validateInput(input.value.trim()));
   });
   input.addEventListener("input", function () {
+    applyPhoneFormat(input);
     if (blurredOnce) setInputError(validateInput(input.value.trim()));
   });
 
