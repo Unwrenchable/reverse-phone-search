@@ -1,9 +1,36 @@
+import time
+import threading
 import phonenumbers
 from flask import Flask, jsonify, render_template, request
 
 from database import init_db, lookup_phone
 
 app = Flask(__name__)
+
+# ---------------------------------------------------------------------------
+# Simple in-memory rate limiter: max RATE_LIMIT_MAX_CALLS per window per IP
+# ---------------------------------------------------------------------------
+_RATE_LIMIT_WINDOW = 60   # seconds
+_RATE_LIMIT_MAX_CALLS = 20
+
+_rate_lock = threading.Lock()
+_rate_data: dict[str, list[float]] = {}  # ip -> list of request timestamps
+
+
+def _is_rate_limited(ip: str) -> bool:
+    """Return True if *ip* has exceeded the rate limit."""
+    now = time.monotonic()
+    cutoff = now - _RATE_LIMIT_WINDOW
+    with _rate_lock:
+        timestamps = _rate_data.get(ip, [])
+        # Remove timestamps outside the current window
+        timestamps = [t for t in timestamps if t > cutoff]
+        if len(timestamps) >= _RATE_LIMIT_MAX_CALLS:
+            _rate_data[ip] = timestamps
+            return True
+        timestamps.append(now)
+        _rate_data[ip] = timestamps
+        return False
 
 
 def _normalize_phone(raw: str):
@@ -38,7 +65,15 @@ def search():
       - on success:   { "found": true,  "result": { ... } }
       - on not found: { "found": false }
       - on error:     { "error": "..." }  HTTP 400
+      - on rate limit: { "error": "..." }  HTTP 429
     """
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown").split(",")[0].strip() or "unknown"
+    if _is_rate_limited(ip):
+        return (
+            jsonify({"error": "Too many requests. Please wait a moment and try again."}),
+            429,
+        )
+
     raw = request.args.get("phone", "")
     try:
         normalized = _normalize_phone(raw)

@@ -25,7 +25,7 @@
             type="tel"
             id="phone-input"
             name="phone"
-            placeholder="e.g. (202) 555-0101 or +1-202-555-0101"
+            placeholder="e.g. 9495551234 or +442071234567"
             aria-label="Phone number"
             required
           />
@@ -33,11 +33,17 @@
             <span class="btn-icon">🔍</span> Search
           </button>
         </div>
+        <p id="input-error" class="input-error" role="alert" aria-live="polite"></p>
         <p class="search-hint">
-          US numbers can be entered without a country code.
-          International numbers require a <code>+</code> prefix.
+          US numbers are auto-formatted as you type.
+          For international numbers, start with a <code>+</code> and country code.
         </p>
       </form>
+
+      <div id="recent-searches" class="recent-searches" hidden>
+        <p class="recent-label">Recent searches:</p>
+        <div id="recent-list" class="recent-list"></div>
+      </div>
     </section>
 
     <div id="result-area" role="region" aria-live="polite"></div>

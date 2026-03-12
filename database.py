@@ -699,6 +699,7 @@ def init_db(db_path=None):
 def lookup_phone(phone: str, db_path=None):
     """
     Look up a contact by their E.164 phone number.
+    Increments search_count on each successful lookup.
     Returns a dict with contact details or None if not found.
     """
     conn = get_connection(db_path)
@@ -714,7 +715,14 @@ def lookup_phone(phone: str, db_path=None):
             (phone,),
         ).fetchone()
         if row:
-            return dict(row)
+            with conn:
+                conn.execute(
+                    "UPDATE contacts SET search_count = search_count + 1 WHERE phone = ?",
+                    (phone,),
+                )
+            result = dict(row)
+            result["search_count"] = result["search_count"] + 1
+            return result
         return None
     finally:
         conn.close()

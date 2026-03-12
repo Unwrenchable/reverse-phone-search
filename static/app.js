@@ -1,15 +1,150 @@
 (function () {
   "use strict";
 
-  const form       = document.getElementById("search-form");
-  const input      = document.getElementById("phone-input");
-  const btn        = document.getElementById("search-btn");
-  const resultArea = document.getElementById("result-area");
+  /* ------------------------------------------------------------------ */
+  /* Utility                                                              */
+  /* ------------------------------------------------------------------ */
+  function esc(str) {
+    if (str == null) return "";
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
 
+  const form        = document.getElementById("search-form");
+  const input       = document.getElementById("phone-input");
+  const btn         = document.getElementById("search-btn");
+  const resultArea  = document.getElementById("result-area");
+  const inputError  = document.getElementById("input-error");
+
+  /* ------------------------------------------------------------------ */
+  /* Recent searches (localStorage, last 5)                              */
+  /* ------------------------------------------------------------------ */
+  const RECENT_KEY  = "rps_recent_searches";
+  const RECENT_MAX  = 5;
+
+  function loadRecent() {
+    try { return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]"); }
+    catch { return []; }
+  }
+
+  function saveRecent(phone) {
+    let list = loadRecent().filter(p => p !== phone);
+    list.unshift(phone);
+    if (list.length > RECENT_MAX) list = list.slice(0, RECENT_MAX);
+    try { localStorage.setItem(RECENT_KEY, JSON.stringify(list)); } catch { /* quota */ }
+    renderRecent(list);
+  }
+
+  function renderRecent(list) {
+    const container = document.getElementById("recent-searches");
+    const ul        = document.getElementById("recent-list");
+    if (!list.length) { container.hidden = true; return; }
+    ul.innerHTML = list.map(p =>
+      `<button type="button" class="recent-chip" data-phone="${esc(p)}">${esc(p)}</button>`
+    ).join("");
+    container.hidden = false;
+  }
+
+  // Clicking a recent chip fills the input and submits
+  document.getElementById("recent-list").addEventListener("click", function (e) {
+    const chip = e.target.closest(".recent-chip");
+    if (!chip) return;
+    input.value = chip.dataset.phone;
+    form.requestSubmit();
+  });
+
+  // Render saved searches on page load
+  renderRecent(loadRecent());
+
+  /* ------------------------------------------------------------------ */
+  /* Phone auto-formatter                                                */
+  /* ------------------------------------------------------------------ */
+  /**
+   * Format a partial or complete NANP number as (NXX) NXX-XXXX.
+   * Values that start with '+' (international) are returned unchanged.
+   */
+  function formatPhoneValue(value) {
+    if (value.startsWith("+")) return value;
+    const d = value.replace(/\D/g, "").slice(0, 10);
+    if (d.length === 0) return "";
+    if (d.length <= 3) return "(" + d;
+    if (d.length <= 6) return "(" + d.slice(0, 3) + ") " + d.slice(3);
+    return "(" + d.slice(0, 3) + ") " + d.slice(3, 6) + "-" + d.slice(6, 10);
+  }
+
+  /**
+   * Reformat the input element's value in-place, preserving the cursor by
+   * counting how many digits appeared before the original cursor position.
+   */
+  function applyPhoneFormat(inputEl) {
+    const raw = inputEl.value;
+    if (raw.startsWith("+")) return;             // leave international alone
+    const sel = inputEl.selectionStart || 0;
+    const digitsBeforeCursor = (raw.slice(0, sel).match(/\d/g) || []).length;
+
+    const formatted = formatPhoneValue(raw);
+    if (formatted === raw) return;               // nothing changed
+
+    inputEl.value = formatted;
+
+    // Find new cursor position: advance past the same count of digits
+    let seen = 0;
+    let newPos = formatted.length;
+    for (let i = 0; i < formatted.length; i++) {
+      if (/\d/.test(formatted[i])) {
+        seen++;
+        if (seen === digitsBeforeCursor) { newPos = i + 1; break; }
+      }
+    }
+    if (digitsBeforeCursor === 0) newPos = 0;
+    inputEl.setSelectionRange(newPos, newPos);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Client-side input validation                                        */
+  /* ------------------------------------------------------------------ */
+  function validateInput(value) {
+    if (!value) return "Please enter a phone number.";
+    const digits = value.replace(/\D/g, "");
+    if (digits.length < 7) return "Please enter at least 7 digits.";
+    return "";
+  }
+
+  function setInputError(msg) {
+    inputError.textContent = msg;
+    input.setAttribute("aria-invalid", msg ? "true" : "false");
+  }
+
+  // Format while typing; validate after first blur
+  let blurredOnce = false;
+  input.addEventListener("blur", function () {
+    blurredOnce = true;
+    setInputError(validateInput(input.value.trim()));
+  });
+  input.addEventListener("input", function () {
+    applyPhoneFormat(input);
+    if (blurredOnce) setInputError(validateInput(input.value.trim()));
+  });
+
+  /* ------------------------------------------------------------------ */
+  /* Form submit                                                          */
+  /* ------------------------------------------------------------------ */
   form.addEventListener("submit", async function (e) {
     e.preventDefault();
     const phone = input.value.trim();
-    if (!phone) return;
+
+    const validationError = validateInput(phone);
+    if (validationError) {
+      blurredOnce = true;
+      setInputError(validationError);
+      input.focus();
+      return;
+    }
+    setInputError("");
 
     btn.disabled = true;
     btn.innerHTML = '<span class="btn-icon">⏳</span> Searching…';
@@ -19,11 +154,15 @@
       const res  = await fetch("/search?" + new URLSearchParams({ phone }));
       const data = await res.json();
 
-      if (!res.ok) {
+      if (res.status === 429) {
+        showError(data.error || "Too many requests. Please wait a moment and try again.");
+      } else if (!res.ok) {
         showError(data.error || "An unexpected error occurred.");
       } else if (data.found) {
+        saveRecent(phone);
         showReport(data.result);
       } else {
+        saveRecent(phone);
         showNotFound(phone);
       }
     } catch {
@@ -189,13 +328,4 @@
       </div>`;
   }
 
-  function esc(str) {
-    if (str == null) return "";
-    return String(str)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  }
 })();
